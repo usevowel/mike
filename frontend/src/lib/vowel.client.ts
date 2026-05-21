@@ -64,9 +64,13 @@ function resolveVowelPrimeEnvironment(): VowelPrimeEnvironment {
     return MIKE_VOICE_PRIME_ENV;
 }
 
+/** Groq LLM on vowel-prime (OpenAI-compatible model id on Groq). */
+const MIKE_VOWEL_LLM_PROVIDER = "groq" as const;
+const MIKE_VOWEL_LLM_MODEL = "openai/gpt-oss-120b";
+
 /**
  * Builds hidden voice config for the token issuer.
- * vowel-prime uses testing prime, Groq Whisper STT, and Grok TTS (dev overrides on VowelVoiceConfig).
+ * vowel-prime: testing env, Groq Whisper STT, Grok TTS, Groq gpt-oss-120b LLM.
  */
 function buildHiddenVoiceConfig(
     provider: MikeVowelProvider,
@@ -88,6 +92,8 @@ function buildHiddenVoiceConfig(
         };
         config.stt = { provider: "groq-whisper" };
         config.tts = { provider: "grok" };
+        config.llmProvider = MIKE_VOWEL_LLM_PROVIDER;
+        config.model = MIKE_VOWEL_LLM_MODEL;
     }
 
     return config;
@@ -261,7 +267,7 @@ Help users navigate Mike, discuss their legal work, and send finalized prompts i
 
     const primeEnv = voiceConfig.vowelPrimeConfig?.environment;
     console.log(
-        `✅ Vowel client configured (provider: ${provider}${primeEnv ? `, prime: ${primeEnv}` : ""}, stt: ${voiceConfig.stt?.provider ?? "default"}, tts: ${voiceConfig.tts?.provider ?? "default"})`,
+        `✅ Vowel client configured (provider: ${provider}${primeEnv ? `, prime: ${primeEnv}` : ""}, stt: ${voiceConfig.stt?.provider ?? "default"}, tts: ${voiceConfig.tts?.provider ?? "default"}, llm: ${voiceConfig.llmProvider ?? "default"}/${voiceConfig.model ?? "default"})`,
     );
 
     registerCustomActions(vowel);
