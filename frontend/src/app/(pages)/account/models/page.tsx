@@ -23,6 +23,11 @@ import {
 
 const API_KEY_FIELDS = [
     {
+        provider: "crofai",
+        label: "CrofAI API Key",
+        placeholder: "nahcrof_…",
+    },
+    {
         provider: "claude",
         label: "Anthropic (Claude) API Key",
         placeholder: "sk-ant-…",
@@ -132,7 +137,8 @@ function TabularModelDropdown({
     const [isOpen, setIsOpen] = useState(false);
     const selected = MODELS.find((m) => m.id === value);
     const selectedAvailable = apiKeys ? isModelAvailable(value, apiKeys) : true;
-    const groups: ("Anthropic" | "Google" | "OpenAI")[] = [
+    const groups: ("Anthropic" | "Google" | "OpenAI" | "CrofAI")[] = [
+        "CrofAI",
         "Anthropic",
         "Google",
         "OpenAI",

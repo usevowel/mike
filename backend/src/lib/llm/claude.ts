@@ -18,10 +18,37 @@ type NativeMessage = {
     content: string | ContentBlock[];
 };
 
-const MAX_TOKENS = 16384;
+export type ClaudeClientMode = "anthropic" | "crof";
 
-function apiKey(override?: string | null): string {
-    const key = override?.trim() || process.env.ANTHROPIC_API_KEY?.trim() || "";
+const MAX_TOKENS = 16384;
+const DEFAULT_CROF_ANTHROPIC_BASE_URL = "https://anthropic.nahcrof.com";
+
+function crofBaseUrl(): string {
+    return (
+        process.env.CROFAI_ANTHROPIC_BASE_URL?.trim() ||
+        DEFAULT_CROF_ANTHROPIC_BASE_URL
+    );
+}
+
+function apiKey(
+    override: string | null | undefined,
+    mode: ClaudeClientMode,
+): string {
+    if (mode === "crof") {
+        const key = override?.trim() || process.env.CROFAI_API_KEY?.trim() || "";
+        if (!key) {
+            throw new Error(
+                "CrofAI API key is not configured. Set CROFAI_API_KEY or add a user CrofAI key.",
+            );
+        }
+        return key;
+    }
+
+    const key =
+        override?.trim() ||
+        process.env.ANTHROPIC_API_KEY?.trim() ||
+        process.env.CLAUDE_API_KEY?.trim() ||
+        "";
     if (!key) {
         throw new Error(
             "Anthropic API key is not configured. Set ANTHROPIC_API_KEY or add a user Anthropic key.",
@@ -30,8 +57,17 @@ function apiKey(override?: string | null): string {
     return key;
 }
 
-function client(override?: string | null): Anthropic {
-    const apiKeyValue = apiKey(override);
+function client(
+    override: string | null | undefined,
+    mode: ClaudeClientMode = "anthropic",
+): Anthropic {
+    const apiKeyValue = apiKey(override, mode);
+    if (mode === "crof") {
+        return new Anthropic({
+            apiKey: apiKeyValue,
+            baseURL: crofBaseUrl(),
+        });
+    }
     return new Anthropic({ apiKey: apiKeyValue });
 }
 
@@ -41,8 +77,16 @@ function toNativeMessages(
     return messages.map((m) => ({ role: m.role, content: m.content }));
 }
 
+function keyOverride(
+    apiKeys: StreamChatParams["apiKeys"],
+    mode: ClaudeClientMode,
+): string | null | undefined {
+    if (mode === "crof") return apiKeys?.crofai;
+    return apiKeys?.claude;
+}
+
 export async function streamClaude(
-    params: StreamChatParams,
+    params: StreamChatParams & { clientMode?: ClaudeClientMode },
 ): Promise<StreamChatResult> {
     const {
         model,
@@ -52,10 +96,12 @@ export async function streamClaude(
         runTools,
         apiKeys,
         enableThinking,
+        clientMode = "anthropic",
     } = params;
     const maxIter = params.maxIterations ?? 10;
-    const anthropic = client(apiKeys?.claude);
+    const anthropic = client(keyOverride(apiKeys, clientMode), clientMode);
     const claudeTools = toClaudeTools(tools);
+    const useAdaptiveThinking = !!enableThinking && clientMode === "anthropic";
 
     const messages: NativeMessage[] = toNativeMessages(params.messages);
     let fullText = "";
@@ -71,8 +117,8 @@ export async function streamClaude(
             max_tokens: MAX_TOKENS,
             // Claude 4.x models require `thinking.type: "adaptive"` and
             // drive effort via `output_config.effort` rather than a fixed
-            // token budget. We only opt in when the caller requested it.
-            ...(enableThinking
+            // token budget. Crof's Anthropic proxy does not support this yet.
+            ...(useAdaptiveThinking
                 ? ({
                       thinking: { type: "adaptive" },
                       output_config: { effort: "high" },
@@ -149,9 +195,14 @@ export async function completeClaudeText(params: {
     systemPrompt?: string;
     user: string;
     maxTokens?: number;
-    apiKeys?: { claude?: string | null };
+    apiKeys?: { claude?: string | null; crofai?: string | null };
+    clientMode?: ClaudeClientMode;
 }): Promise<string> {
-    const anthropic = client(params.apiKeys?.claude);
+    const mode = params.clientMode ?? "anthropic";
+    const anthropic = client(
+        mode === "crof" ? params.apiKeys?.crofai : params.apiKeys?.claude,
+        mode,
+    );
     const resp = await anthropic.messages.create({
         model: params.model,
         max_tokens: params.maxTokens ?? 512,

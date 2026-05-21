@@ -12,6 +12,7 @@ export async function streamChatWithTools(
 ): Promise<StreamChatResult> {
     const provider = providerForModel(params.model);
     if (provider === "claude") return streamClaude(params);
+    if (provider === "crofai") return streamClaude({ ...params, clientMode: "crof" });
     if (provider === "openai") return streamOpenAI(params);
     return streamGemini(params);
 }
@@ -25,6 +26,9 @@ export async function completeText(params: {
 }): Promise<string> {
     const provider = providerForModel(params.model);
     if (provider === "claude") return completeClaudeText(params);
+    if (provider === "crofai") {
+        return completeClaudeText({ ...params, clientMode: "crof" });
+    }
     if (provider === "openai") return completeOpenAIText(params);
     return completeGeminiText(params);
 }
