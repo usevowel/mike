@@ -33,6 +33,7 @@ import {
     moveSubfolderToFolder,
 } from "@/app/lib/mikeApi";
 import { useAssistantChat } from "@/app/hooks/useAssistantChat";
+import { useVowelChatSession } from "@/app/hooks/useVowelChatSession";
 import { useChatHistoryContext } from "@/app/contexts/ChatHistoryContext";
 import { UserMessage } from "@/app/components/assistant/UserMessage";
 import { AssistantMessage } from "@/app/components/assistant/AssistantMessage";
@@ -481,6 +482,17 @@ export default function ProjectAssistantChatPage({ params }: Props) {
         },
         [activeTab, handleChat],
     );
+
+    useVowelChatSession({
+        kind: "project_assistant",
+        chatId,
+        projectId,
+        chatTitle,
+        projectName: project?.name ?? null,
+        messages,
+        documents: project?.documents ?? [],
+        isResponseLoading,
+    });
 
     const handleDocClick = (doc: MikeDocument) => {
         openTab(doc.id, doc.filename);

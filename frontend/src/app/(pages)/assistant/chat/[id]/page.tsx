@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAssistantChat } from "@/app/hooks/useAssistantChat";
+import { useVowelChatSession } from "@/app/hooks/useVowelChatSession";
 import { useChatHistoryContext } from "@/app/contexts/ChatHistoryContext";
 import { ChatView } from "@/app/components/assistant/ChatView";
-import { getChat } from "@/app/lib/mikeApi";
+import type { MikeDocument } from "@/app/components/shared/types";
+import { getChat, listStandaloneDocuments } from "@/app/lib/mikeApi";
 
 export default function AssistantChatPage() {
     const router = useRouter();
@@ -18,9 +20,28 @@ export default function AssistantChatPage() {
     const initialMessages = newChatMessages ?? [];
     const { messages, isResponseLoading, handleChat, setMessages, cancel } =
         useAssistantChat({ initialMessages, chatId: id });
+    const [chatTitle, setChatTitle] = useState<string | null>(null);
+    const [standaloneDocuments, setStandaloneDocuments] = useState<
+        MikeDocument[]
+    >([]);
+
+    useVowelChatSession({
+        kind: "assistant",
+        chatId: id,
+        chatTitle,
+        messages,
+        documents: standaloneDocuments,
+        isResponseLoading,
+    });
 
     const hasAutoSent = useRef(false);
     const hasLoaded = useRef(false);
+
+    useEffect(() => {
+        listStandaloneDocuments()
+            .then(setStandaloneDocuments)
+            .catch(() => setStandaloneDocuments([]));
+    }, []);
 
     useEffect(() => {
         setCurrentChatId(id);
@@ -35,7 +56,8 @@ export default function AssistantChatPage() {
         hasLoaded.current = true;
 
         getChat(id)
-            .then(({ messages: loaded }) => {
+            .then(({ chat, messages: loaded }) => {
+                setChatTitle(chat.title);
                 if (loaded.length > 0) {
                     setMessages(loaded);
                 } else {

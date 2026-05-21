@@ -3,10 +3,17 @@
 import {
     useState,
     useCallback,
+    useEffect,
     useRef,
     forwardRef,
     useImperativeHandle,
 } from "react";
+import {
+    clearVowelChatInput,
+    getVowelChatSession,
+    notifyVowelChatSessionChanged,
+    registerVowelChatInput,
+} from "@/lib/vowel.chatBridge";
 import {
     ArrowRight,
     Check,
@@ -33,6 +40,10 @@ import type { MikeDocument, MikeMessage } from "../shared/types";
 
 export interface ChatInputHandle {
     addDoc: (doc: MikeDocument) => void;
+    /** Updates the live running draft in the textarea (used by Vowel voice). */
+    setDraft: (text: string, documentIds?: string[]) => void;
+    /** Clicks Send with the current draft (used by Vowel after user approval). */
+    sendDraft: () => { success: boolean; error?: string };
 }
 
 interface Props {
@@ -69,19 +80,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
     const { profile } = useUserProfile();
     const apiKeys = profile?.apiKeys;
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const valueRef = useRef(value);
+    valueRef.current = value;
+    const isLoadingRef = useRef(isLoading);
+    isLoadingRef.current = isLoading;
     const [docSelectorOpen, setDocSelectorOpen] = useState(false);
     const [workflowModalOpen, setWorkflowModalOpen] = useState(false);
     const [apiKeyModalProvider, setApiKeyModalProvider] =
         useState<ModelProvider | null>(null);
-
-    useImperativeHandle(ref, () => ({
-        addDoc: (doc: MikeDocument) => {
-            setAttachedDocs((prev) => {
-                if (prev.some((d) => d.id === doc.id)) return prev;
-                return [...prev, doc];
-            });
-        },
-    }));
 
     const handleAddDocFromProject = useCallback((doc: MikeDocument) => {
         setAttachedDocs((prev) => {
@@ -110,9 +116,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
         el.style.height = `${el.scrollHeight}px`;
     };
 
-    const handleSubmit = () => {
-        const query = value.trim();
-        if (!query || isLoading) return;
+    const resizeTextarea = useCallback(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.style.height = "auto";
+        el.style.height = `${el.scrollHeight}px`;
+    }, []);
+
+    const handleSubmit = useCallback(() => {
+        const query = valueRef.current.trim();
+        if (!query || isLoadingRef.current) return;
         if (apiKeys && !isModelAvailable(model, apiKeys)) {
             setApiKeyModalProvider(getModelProvider(model));
             return;
@@ -137,7 +150,99 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput(
             workflow: wf ?? undefined,
             model,
         });
-    };
+    }, [
+        apiKeys,
+        attachedDocs,
+        model,
+        onSubmit,
+        selectedWorkflow,
+    ]);
+
+    const setDraft = useCallback(
+        (text: string, documentIds?: string[]) => {
+            setValue(text);
+            requestAnimationFrame(() => resizeTextarea());
+
+            if (documentIds?.length) {
+                const session = getVowelChatSession();
+                const summaries = session?.documents ?? [];
+                const toAttach: MikeDocument[] = [];
+                for (const id of documentIds) {
+                    const s = summaries.find((d) => d.id === id);
+                    if (s) {
+                        toAttach.push({
+                            id: s.id,
+                            filename: s.filename,
+                            file_type: s.file_type ?? null,
+                            project_id: session?.projectId ?? null,
+                            storage_path: null,
+                            pdf_storage_path: null,
+                            size_bytes: null,
+                            page_count: null,
+                            structure_tree: null,
+                            status:
+                                (s.status as MikeDocument["status"]) ??
+                                "ready",
+                            created_at: null,
+                        });
+                    }
+                }
+                if (toAttach.length > 0) {
+                    setAttachedDocs((prev) => {
+                        const seen = new Set(prev.map((d) => d.id));
+                        return [
+                            ...prev,
+                            ...toAttach.filter((d) => !seen.has(d.id)),
+                        ];
+                    });
+                }
+            }
+            notifyVowelChatSessionChanged();
+        },
+        [resizeTextarea],
+    );
+
+    const sendDraft = useCallback((): { success: boolean; error?: string } => {
+        const query = valueRef.current.trim();
+        if (!query) {
+            return { success: false, error: "Chat input is empty." };
+        }
+        if (isLoadingRef.current) {
+            return {
+                success: false,
+                error: "Mike is still responding. Wait before sending.",
+            };
+        }
+        handleSubmit();
+        return { success: true };
+    }, [handleSubmit]);
+
+    useImperativeHandle(
+        ref,
+        () => ({
+            addDoc: (doc: MikeDocument) => {
+                setAttachedDocs((prev) => {
+                    if (prev.some((d) => d.id === doc.id)) return prev;
+                    return [...prev, doc];
+                });
+            },
+            setDraft,
+            sendDraft,
+        }),
+        [setDraft, sendDraft],
+    );
+
+    useEffect(() => {
+        registerVowelChatInput({
+            setDraft,
+            sendDraft,
+            getDraft: () => ({
+                text: valueRef.current,
+                hasContent: !!valueRef.current.trim(),
+            }),
+        });
+        return () => clearVowelChatInput();
+    }, [setDraft, sendDraft]);
 
     const handleActionClick = () => {
         if (isLoading) {
