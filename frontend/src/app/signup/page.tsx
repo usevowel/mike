@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { getSupabaseConfigError, supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
@@ -48,6 +48,13 @@ export default function SignupPage() {
             return;
         }
 
+        const configError = getSupabaseConfigError();
+        if (configError) {
+            setError(configError);
+            setLoading(false);
+            return;
+        }
+
         try {
             const { data, error } = await supabase.auth.signUp({
                 email,
@@ -78,10 +85,12 @@ export default function SignupPage() {
                 router.push("/assistant");
             }, 2000);
         } catch (error: unknown) {
+            const message =
+                error instanceof Error ? error.message : "";
             setError(
-                error instanceof Error
-                    ? error.message
-                    : "An error occurred during signup",
+                message === "Failed to fetch"
+                    ? "Could not reach Supabase. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY in frontend/.env.local, and that backend/.env uses the same SUPABASE_URL."
+                    : message || "An error occurred during signup",
             );
         } finally {
             setLoading(false);
